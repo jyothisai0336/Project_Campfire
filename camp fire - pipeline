@@ -1,0 +1,66 @@
+pipeline {
+    agent any
+        tools{
+            nodejs 'nodejs'
+        }
+environment{
+    SCANNER_HOME= tool 'sonar'
+}
+    stages {
+        stage('CleanWS'){
+            steps {
+                cleanWs()
+            }
+        }
+        stage('Code'){
+            steps{
+                git 'https://github.com/jyothisai0336/Project_Campfire.git'
+            }
+        }
+        stage('CQA'){
+            steps{
+                withSonarQubeEnv('sonar') {
+                    sh ''' ${SCANNER_HOME}/bin/sonar-scanner \
+                    -Dsonar.projectName=campfire \
+                    -Dsonar.projectKey=campfire '''
+                }
+            }
+        }
+        stage('Qulity Gates'){
+            steps{
+                waitForQualityGate abortPipeline: false, credentialsId: 'sonar'
+            }
+        }
+        stage('Install dependency'){
+            steps{
+                sh 'npm install'
+            }
+        }
+        stage('Build'){
+            steps{
+                sh 'docker build -t jyothisai33/campfire:v1 .'
+            }
+        }
+        stage('Img Scan'){
+            steps{
+                sh 'trivy image jyothisai33/campfire:v1'
+            }
+        }
+        stage('Push'){
+            steps{
+                script{
+                    withDockerRegistry(credentialsId: 'docker') {
+                        sh'docker push jyothisai33/campfire:v1'
+                    }
+                }
+            }
+        }
+        stage('Deploy'){
+            steps{
+                withKubeCredentials(kubectlCredentials: [[caCertificate: '', clusterName: 'my-eks-cluster', contextName: '', credentialsId: 'kubernetes', namespace: 'dev', serverUrl: 'https://40157D7D58EB240F2CD95186C1060E0B.gr7.us-east-1.eks.amazonaws.com']]) {
+                    sh 'kubectl apply -f Manifest/'
+                }
+            }
+        }
+    }
+}
